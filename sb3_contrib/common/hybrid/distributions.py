@@ -63,6 +63,17 @@ class Hybrid(th.distributions.Distribution):
         categorical_samples = [dist.sample() for dist in self.categorical_dists]
         gaussian_samples = self.gaussian_dist.sample()
         return th.stack(categorical_samples, dim=-1), gaussian_samples
+
+    def mode(self) -> tuple[th.Tensor, th.Tensor]:
+        """
+        Returns the most likely (deterministic) action for both the discrete and
+        continuous components of the hybrid distribution.
+
+        :return: Tuple (discrete mode, continuous mode)
+        """
+        categorical_modes = [th.argmax(dist.probs, dim=-1) for dist in self.categorical_dists]
+        gaussian_mode = self.gaussian_dist.mean
+        return th.stack(categorical_modes, dim=-1), gaussian_mode
         
     def log_prob(self, discrete_actions: th.Tensor, continuous_actions: th.Tensor) -> tuple[th.Tensor, th.Tensor]:
         """
@@ -149,13 +160,15 @@ class HybridDistribution(Distribution):
         assert self.distribution is not None, "Must set distribution parameters"
         return self.distribution.sample()
 
-    def mode(self) -> th.Tensor:
+    def mode(self) -> tuple[th.Tensor, th.Tensor]:
         """
         Returns the most likely action (deterministic output)
         from the probability distribution
 
-        :return: the stochastic action
+        :return: the deterministic (discrete, continuous) action tuple
         """
+        assert self.distribution is not None, "Must set distribution parameters"
+        return self.distribution.mode()
 
     def get_actions(self, deterministic: bool = False) -> tuple[th.Tensor, th.Tensor]:
         """
@@ -201,4 +214,3 @@ def make_hybrid_proba_distribution(action_space: spaces.Tuple) -> HybridDistribu
         categorical_dimensions=action_space[0].nvec,
         n_continuous=action_space[1].shape[0]
     )
-
