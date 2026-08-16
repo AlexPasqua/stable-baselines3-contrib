@@ -241,6 +241,56 @@ class HybridActorCriticPolicy(BasePolicy):
         distribution = self._get_action_dist_from_latent(latent_pi)
         return distribution
     
+    def predict(
+        self,
+        observation: Union[np.ndarray, dict[str, np.ndarray]],
+        state: Optional[tuple[np.ndarray, ...]] = None,
+        episode_start: Optional[np.ndarray] = None,
+        deterministic: bool = False,
+    ) -> tuple[tuple[np.ndarray, np.ndarray], Optional[tuple[np.ndarray, ...]]]:
+        """
+        Get the policy action from an observation (and optional hidden state).
+        Overridden from ``BasePolicy.predict`` because HybridActorCriticPolicy's
+        ``_predict`` returns a *pair* of tensors (discrete, continuous) instead of a
+        single tensor, which the base implementation cannot unpack
+        (it calls ``actions.cpu()`` directly on the ``_predict`` output).
+
+        :param observation: the input observation
+        :param state: The last hidden states (can be None, used in recurrent policies)
+        :param episode_start: The last masks (can be None, used in recurrent policies)
+            this correspond to beginning of episodes,
+            where the hidden states of the RNN must be reset.
+        :param deterministic: Whether or not to return deterministic actions.
+        :return: the model's (discrete, continuous) action tuple and the next hidden state
+            (used in recurrent policies)
+        """
+        # Switch to eval mode (this affects batch norm / dropout)
+        self.set_training_mode(False)
+
+        observation, vectorized_env = self.obs_to_tensor(observation)
+
+        with th.no_grad():
+            actions_d, actions_c = self._predict(observation, deterministic=deterministic)
+
+        n_discrete = int(self.action_space.spaces[0].nvec.shape[0])
+        n_continuous = int(np.prod(self.action_space.spaces[1].shape))
+
+        # Convert to numpy and reshape to (n_envs, action_dim), mirroring BasePolicy.predict
+        actions_d = actions_d.cpu().numpy().reshape((-1, n_discrete))
+        actions_c = actions_c.cpu().numpy().reshape((-1, n_continuous))
+
+        # Rescale/clip the continuous actions to stay within the Box bounds
+        if self.squash_output:
+            actions_c = self.unscale_action(actions_c)
+        else:
+            actions_c = np.clip(actions_c, self.action_space.spaces[1].low, self.action_space.spaces[1].high)
+
+        if not vectorized_env:
+            actions_d = actions_d.squeeze(axis=0)
+            actions_c = actions_c.squeeze(axis=0)
+
+        return (actions_d, actions_c), state
+    
     def _predict(self, observation: PyTorchObs, deterministic: bool = False) -> th.Tensor:
         """
         Get the action according to the policy for a given observation.
