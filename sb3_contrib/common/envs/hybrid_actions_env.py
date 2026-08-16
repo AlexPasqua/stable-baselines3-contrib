@@ -64,7 +64,7 @@ class CatchingPointEnv(gym.Env):
         # actual step logic
         return self._step(actions_d, actions_c)
 
-    def _step(self, actions_d: np.ndarray, actions_c: np.ndarray) -> tuple[np.ndarray, float, bool, dict]:
+    def _step(self, actions_d: np.ndarray, actions_c: np.ndarray) -> tuple[np.ndarray, float, bool, bool, dict]:
         """
         Take a step in the environment using the provided actions.
         
@@ -103,7 +103,7 @@ class CatchingPointEnv(gym.Env):
                     terminated = True   # max catches reached: natural termination
 
         self.step_count += 1
-        if self.step_count >= self.max_steps:
+        if self.step_count >= self.max_steps and not terminated:
             reward = -1.0   # failed to catch within max steps
             truncated = True    # max steps reached: truncation
 
